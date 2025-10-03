@@ -106,25 +106,25 @@ def main():
 
     # t-SNE no ready
 
-    """
+
     
     indices_per_class = {0: [], 1: [], 2: [], 3: []}
 
-    for idx in range(len(test_dataset)):
+    for idx in range(len(train_dataset)):
         #print(test_dataset[idx])
-        _, label = test_dataset[idx]
-        if len(indices_per_class[label]) < 10:
+        _, label = train_dataset[idx]
+        if len(indices_per_class[label]) < 1000:
             indices_per_class[label].append(idx)
 
     subset_indices = sum(indices_per_class.values(), [])
     print(subset_indices)
-    subset_dataset = Subset(test_dataset, subset_indices)
+    subset_dataset = Subset(train_dataset, subset_indices)
 
     for idx in range(len(subset_dataset)):
         print(subset_dataset[idx])
 
     resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-    resnet.fc = torch.nn.Identity()  # remove final fc layer
+    resnet.fc = torch.nn.Identity()
     resnet.eval()
 
     loader = torch.utils.data.DataLoader(subset_dataset, batch_size=1, shuffle=False)
@@ -134,7 +134,7 @@ def main():
     with torch.no_grad():
         for imgs, lbls in loader:
             imgs = imgs.repeat(1, 3, 1, 1)
-            vecs = resnet(imgs)  # [batch, 512]
+            vecs = resnet(imgs)
             features.append(vecs)
             labels.append(lbls)
 
@@ -144,13 +144,30 @@ def main():
     tsne = TSNE(n_components=2, perplexity=30, random_state=42)
     embedding = tsne.fit_transform(features)
 
+    label_names = ["CNV", "DME", "DRUSEN", "NORMAL"]
+    colors = ["red", "blue", "green", "orange"]
+
     plt.figure(figsize=(10, 8))
-    plt.scatter(embedding[:, 0], embedding[:, 1], c=labels, cmap="tab10", s=5)
-    plt.colorbar()
-    plt.savefig("tsne_plot.png")  # Save instead of showing
+
+    for i, name in enumerate(label_names):
+        mask = labels == i
+        plt.scatter(
+            embedding[mask, 0],
+            embedding[mask, 1],
+            s=10,
+            label=name,
+            color=colors[i],
+            alpha=0.7
+        )
+
+    plt.legend(title="Class", fontsize=10)
+    plt.title("t-SNE Visualization of OCT Features")
+    plt.xlabel("t-SNE 1")
+    plt.ylabel("t-SNE 2")
+    plt.tight_layout()
+    plt.savefig("tsne_plot.png", dpi=300)
     plt.close()
-    
-    """
+
 
 
 
