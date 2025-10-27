@@ -19,8 +19,7 @@ from sklearn.manifold import TSNE
 import matplotlib
 matplotlib.use("Agg")  # use headless backend
 import matplotlib.pyplot as plt
-from Models.MLP import MLP
-from Models.MLP import  grid_search
+
 
 
 def build_index(root_dir, output_csv, splits=["train", "val", "test"], labels=None):
@@ -95,22 +94,23 @@ def main():
         transforms.RandomRotation(10),
     ])
 
+    image_size = (28, 28)
     train_dataset = OCTDataset("dataset_index.csv", split="train",
-                               target_size=(512, 512),
+                               target_size=image_size,
                                normalize="0-1")
 
-    test_dataset = OCTDataset("dataset_index.csv", split="test", target_size=(512, 512),
+    test_dataset = OCTDataset("dataset_index.csv", split="test", target_size=image_size,
                                normalize="0-1")
-    val_dataset = OCTDataset("dataset_index.csv", split="val", target_size=(512, 512))
+    val_dataset = OCTDataset("dataset_index.csv", split="val", target_size=image_size)
 
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=4)
 
     grid_search(train_loader, val_loader, test_loader)
-    mlp_model = MLP()
-    mlp_model.train_model(train_loader, val_loader, 100, 0.01, device="cuda")
-    mlp_model.test(test_loader)
+    #mlp_model = MLP()
+    #mlp_model.train_model(train_loader, val_loader, 100, 0.01, device="cuda")
+    #mlp_model.test(test_loader)
 
 
 
@@ -122,8 +122,7 @@ def main():
  
     # t-SNE no ready
 
-
-    
+    """
     indices_per_class = {0: [], 1: [], 2: [], 3: []}
 
     for idx in range(len(train_dataset)):
@@ -183,6 +182,11 @@ def main():
     plt.tight_layout()
     plt.savefig("tsne_plot.png", dpi=300)
     plt.close()
+    
+    
+    """
+    
+
 
 
 
