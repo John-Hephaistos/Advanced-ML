@@ -13,72 +13,45 @@ from DataAnalysis import build_index
 from collections import Counter
 
 
-class MLP(nn.Module):
-    def __init__(self, learning_rate=0.01, number_of_layers=1, fc1=128, fc2=128, fc3=128, dropout=0.3):
-        super(MLP, self).__init__()
+class CNNbase(nn.Module):
+    def __init__(self, learning_rate=0.01, number_of_layers=1, fc1=128, fc2=128, fc3=128, droput=0.3):
+        super(CNNbase, self).__init__()
         self.learning_rate = learning_rate
-        """
-        
-        self._out_1 = fc1
-        self._out_2 = fc2
-        self._out_3 = fc3
-        self._number_of_layers = number_of_layers
-        self.output_size = 4
+        self.conv1 = nn.Conv2d(1, 32 , kernel_size=(3, 3), padding=1)
+        self.pool = nn.MaxPool2d(2,2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=(3, 3), padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=(3, 3), padding=1)
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=(3, 3), padding=1)
 
-        self._input_layer = nn.Linear(128 * 128, self._out_1)
-        if number_of_layers == 1:
-            self._fc_layer_1 = nn.Linear(self._out_1, self._out_2)
-            self._output_layer = nn.Linear(self._out_2, self.output_size)
-        elif number_of_layers == 2:
-            self._fc_layer_1 = nn.Linear(self._out_1, self._out_2)
-            self._fc_layer_2 = nn.Linear(self._out_2, self._out_3)
-            self._output_layer = nn.Linear(self._out_3, self.output_size)
-        elif number_of_layers == 3:
-            self._fc_layer_1 = nn.Linear(self._out_1, self._out_2)
-            self._fc_layer_2 = nn.Linear(self._out_2, self._out_3)
-            self._fc_layer_3 = nn.Linear(self._out_3, self._out_3)
-            self._output_layer = nn.Linear(self._out_3, self.output_size)
-        """
-        self.net = nn.Sequential(
-            nn.Linear(128 * 128, 1024),  # 16,384 → 1,024
-            nn.ReLU(),
-            nn.BatchNorm1d(1024),
-            nn.Dropout(dropout),
+        self.dropout = nn.Dropout(0.25)
 
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.BatchNorm1d(512),
-            nn.Dropout(dropout),
-
-            nn.Linear(512, 128),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-
-            nn.Linear(128, 4)
-        )
+        # Compute final output shape after pooling
+        self.fc1 = nn.Linear(256 * 8 * 8, 512)
+        self.fc2 = nn.Linear(512, 4)
 
     def forward(self, x):
+        #print(np.shape(x))
+        x = F.relu(self.conv1(x))
+        x = self.pool(x)
 
-        """"
-        x = x.view(x.size(0), -1)
-        x = F.relu(self._input_layer(x))
-        if self._number_of_layers == 1:
-            x = F.relu(self._fc_layer_1(x))
-        elif self._number_of_layers == 2:
-            x = F.relu(self._fc_layer_1(x))
-            x = F.relu(self._fc_layer_2(x))
-        elif self._number_of_layers == 3:
-            x = F.relu(self._fc_layer_1(x))
-            x = F.relu(self._fc_layer_2(x))
-            x = F.relu(self._fc_layer_3(x))
-        return self._output_layer(x)
-        """
-        x = x.view(x.size(0), -1)  # Flatten
-        return self.net(x)
+        x = F.relu(self.conv2(x))
+        x = self.pool(x)
 
-    def train_model(self, train_loader, val_loader, num_epochs, device="cuda", weights_tensor = None):
+        x = F.relu(self.conv3(x))
+        x = self.pool(x)
+
+        x = F.relu(self.conv4(x))
+        x = self.pool(x)
+
+        x = torch.flatten(x, start_dim=1)
+        x = self.dropout(F.relu(self.fc1(x)))
+        x = self.fc2(x)
+
+        return x
+
+    def train_model(self, train_loader, val_loader, num_epochs, device="cuda", weights_tensor=None):
         device = torch.device(device if torch.cuda.is_available() else "cpu")
-        print(f"🚀 Training on: {device}")
+        print(f" Training on: {device}")
         self.to(device)
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         criterion = nn.CrossEntropyLoss(weight=weights_tensor)
@@ -94,7 +67,7 @@ class MLP(nn.Module):
                 inputs, targets = inputs.to(device), targets.to(device)
                 optimizer.zero_grad()
                 outputs = self(inputs)
-                #print(next(self.parameters()).device)
+                # print(next(self.parameters()).device)
                 loss = criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
@@ -102,7 +75,8 @@ class MLP(nn.Module):
 
             val_loss, val_f1 = self.validate(val_loader, device=device)
             epoch_losses.append(running_loss / len(train_loader))
-            print(f"Epoch [{epoch+1}/{num_epochs}] | Train Loss: {running_loss/len(train_loader):.4f} | Val F1: {val_f1:.4f}")
+            print(
+                f"Epoch [{epoch + 1}/{num_epochs}] | Train Loss: {running_loss / len(train_loader):.4f} | Val F1: {val_f1:.4f}")
 
             if val_f1 > best_f1:
                 best_f1 = val_f1
@@ -169,7 +143,6 @@ class MLP(nn.Module):
         return f1
 
 
-
 def grid_search(train_loader, val_loader, test_loader, weights_tensor):
     parameter_grid = {
         'learning_rate': [0.001],
@@ -186,26 +159,22 @@ def grid_search(train_loader, val_loader, test_loader, weights_tensor):
     for params in param_combinations:
         learning_rate, num_layers, fc1, fc2, fc3 = params
         print(f"\n🧠 Testing config: LR={learning_rate}, Layers={num_layers}, FCs=({fc1}, {fc2}, {fc3})")
-        model = MLP(learning_rate=learning_rate, number_of_layers=num_layers, fc1=fc1, fc2=fc2, fc3=fc3).to(device)
-        model.train_model(train_loader, val_loader, num_epochs=100, device=device, weights_tensor=weights_tensor)
+        model = CNNbase(learning_rate=learning_rate, number_of_layers=num_layers, fc1=fc1, fc2=fc2, fc3=fc3).to(device)
+        model.train_model(train_loader, val_loader, num_epochs=20, device=device, weights_tensor=weights_tensor)
         model.test(test_loader, device=device)
+
 
 def cross_validation(train_loader, val_loader, test_loader, weights_tensor):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     f1_score_list = []
     for fold in range(5):
         print(f"Starting validation for fold {fold+1}/5")
-        model = MLP(learning_rate=0.001).to(device)
-        model.train_model(train_loader, val_loader, num_epochs=100, device=device, weights_tensor=weights_tensor)
-        model.test(test_loader, device=device)
-
+        model = CNNbase(learning_rate=0.001).to(device)
+        model.train_model(train_loader, val_loader, num_epochs=20, device=device, weights_tensor=weights_tensor)
         f1, avg = model.test(test_loader, device=device)
         f1_score_list.append(f1)
 
     return np.mean(np.array(f1_score_list))
-
-
-
 
 def main():
     device = 'cuda'
@@ -246,18 +215,17 @@ def main():
                                target_size=image_size,
                                normalize="0-1")
 
-
     test_dataset = OCTDataset("dataset_index.csv", split="test", target_size=image_size,
                               normalize="0-1")
     val_dataset = OCTDataset("dataset_index.csv", split="val", target_size=image_size)
 
-
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=4)
 
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=4)
 
     grid_search(train_loader, val_loader, test_loader, weights_tensor)
+
 
 if __name__ == "__main__":
     main()

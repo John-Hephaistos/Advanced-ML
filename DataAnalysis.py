@@ -107,22 +107,8 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=4)
 
-    grid_search(train_loader, val_loader, test_loader)
-    #mlp_model = MLP()
-    #mlp_model.train_model(train_loader, val_loader, 100, 0.01, device="cuda")
-    #mlp_model.test(test_loader)
 
 
-
-
-
-    
-    
-    
- 
-    # t-SNE no ready
-
-    """
     indices_per_class = {0: [], 1: [], 2: [], 3: []}
 
     for idx in range(len(train_dataset)):
@@ -183,8 +169,7 @@ def main():
     plt.savefig("tsne_plot.png", dpi=300)
     plt.close()
     
-    
-    """
+
     
 
 
