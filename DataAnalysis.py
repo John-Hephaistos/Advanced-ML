@@ -17,7 +17,7 @@ from torch.utils.data import Subset
 import torchvision.models as models
 from sklearn.manifold import TSNE
 import matplotlib
-matplotlib.use("Agg")  # use headless backend
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 

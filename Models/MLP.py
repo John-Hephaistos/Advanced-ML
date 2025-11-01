@@ -73,7 +73,7 @@ class MLP(nn.Module):
             x = F.relu(self._fc_layer_3(x))
         return self._output_layer(x)
         """
-        x = x.view(x.size(0), -1)  # Flatten
+        x = x.view(x.size(0), -1)
         return self.net(x)
 
     def train_model(self, train_loader, val_loader, num_epochs, device="cuda", weights_tensor = None):
@@ -181,7 +181,7 @@ def grid_search(train_loader, val_loader, test_loader, weights_tensor):
 
     param_combinations = list(itertools.product(*parameter_grid.values()))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"🔥 Using device: {device}")
+    print(f"Using device: {device}")
 
     for params in param_combinations:
         learning_rate, num_layers, fc1, fc2, fc3 = params
