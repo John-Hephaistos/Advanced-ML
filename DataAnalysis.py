@@ -168,20 +168,6 @@ def main():
     plt.tight_layout()
     plt.savefig("tsne_plot.png", dpi=300)
     plt.close()
-    
-
-    
-
-
-
-
-
-
-
-
-
-    #train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=4)
-
 
 
 if __name__ == "__main__":
