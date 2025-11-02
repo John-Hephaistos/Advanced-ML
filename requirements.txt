@@ -1,0 +1,11 @@
+pandas
+numpy
+matplotlib
+sklearn
+torch
+cv2
+pillow
+skimage
+joblib
+tqdm
+seaborn
