@@ -1,16 +1,17 @@
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-import random, os
+import random
 import torch.nn.functional as F
 import itertools
 from torch.utils.data import TensorDataset, DataLoader, Subset
 import matplotlib.pyplot as plt
 import torch.optim as optim
 from sklearn.metrics import f1_score, confusion_matrix, ConfusionMatrixDisplay
-from DataAnalysis import OCTDataset
-from DataAnalysis import build_index
+from DataAnalysis import OCTDataset, build_index
 from collections import Counter
 
 random.seed(8)
@@ -22,7 +23,7 @@ torch.set_float32_matmul_precision("medium")
 
 
 class CNNbase(nn.Module):
-    def __init__(self, learning_rate=0.01):
+    def __init__(self, learning_rate=0.001):
         super(CNNbase, self).__init__()
         self.learning_rate = learning_rate
         self.conv1 = nn.Conv2d(1, 32 , kernel_size=(3, 3), padding=1)
@@ -177,6 +178,7 @@ def cross_validation(train_loader, val_loader, test_loader, weights_tensor):
 
 def main():
 
+
     device = 'cuda'
     print("CUDA available:", torch.cuda.is_available())
     if torch.cuda.is_available():
@@ -185,7 +187,7 @@ def main():
     # insert the folder where you dataset is downloaded
     # Note, this can change from device to device - it can differ from Windows 10 or 11 or Mac
     
-    dataset_dir = ""
+    dataset_dir = "C:/Users/Vlad/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017"
 
     build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
 
@@ -228,7 +230,7 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
     grid_search(train_loader, val_loader, test_loader, weights_tensor)
-    #cross_validation(train_loader, val_loader, test_loader, weights_tensor)
+    cross_validation(train_loader, val_loader, test_loader, weights_tensor)
 
 
 if __name__ == "__main__":
