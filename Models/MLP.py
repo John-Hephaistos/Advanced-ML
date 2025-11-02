@@ -202,7 +202,7 @@ def cross_validation(train_loader, val_loader, test_loader, weights_tensor):
         f1, avg = model.test(test_loader, device=device)
         f1_score_list.append(f1)
 
-    return np.mean(np.array(f1_score_list))
+    return np.mean(np.array(f1_score_list)), np.std(np.array(f1_score_list))
 
 
 
@@ -257,7 +257,8 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
 
-    grid_search(train_loader, val_loader, test_loader, weights_tensor)
+    #grid_search(train_loader, val_loader, test_loader, weights_tensor)
+    cross_validation(train_loader, val_loader, test_loader, weights_tensor)
 
 if __name__ == "__main__":
     main()

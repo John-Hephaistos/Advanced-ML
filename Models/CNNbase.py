@@ -13,6 +13,14 @@ from DataAnalysis import OCTDataset
 from DataAnalysis import build_index
 from collections import Counter
 
+random.seed(8)
+np.random.seed(8)
+torch.manual_seed(8)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+torch.set_float32_matmul_precision("medium")
+
+
 class CNNbase(nn.Module):
     def __init__(self, learning_rate=0.01):
         super(CNNbase, self).__init__()
@@ -20,8 +28,6 @@ class CNNbase(nn.Module):
         self.conv1 = nn.Conv2d(1, 32 , kernel_size=(3, 3), padding=1)
         self.pool = nn.MaxPool2d(2,2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=(3, 3), padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=(3, 3), padding=1)
-        self.conv4 = nn.Conv2d(128, 256, kernel_size=(3, 3), padding=1)
 
         self.dropout = nn.Dropout(0.25)
 
@@ -36,12 +42,6 @@ class CNNbase(nn.Module):
 
         x = F.relu(self.conv2(x))
         x = self.pool(x)
-
-        #x = F.relu(self.conv3(x))
-        #x = self.pool(x)
-
-        #x = F.relu(self.conv4(x))
-        #x = self.pool(x)
 
         x = torch.flatten(x, start_dim=1)
         x = self.dropout(F.relu(self.fc1(x)))
@@ -144,7 +144,7 @@ class CNNbase(nn.Module):
 
 def grid_search(train_loader, val_loader, test_loader, weights_tensor):
     parameter_grid = {
-        'learning_rate': [0.001],
+        'learning_rate': [0.001, 0.01],
         'number_of_layers': [1, 2, 3],
         'fc1_size': [128],
         'fc2_size': [256],
@@ -168,12 +168,12 @@ def cross_validation(train_loader, val_loader, test_loader, weights_tensor):
     f1_score_list = []
     for fold in range(5):
         print(f"Starting validation for fold {fold+1}/5")
-        model = CNNbase(learning_rate=0.01).to(device)
-        model.train_model(train_loader, val_loader, num_epochs=20, device=device, weights_tensor=weights_tensor)
+        model = CNNbase(learning_rate=0.001).to(device)
+        model.train_model(train_loader, val_loader, num_epochs=50, device=device, weights_tensor=weights_tensor)
         f1, avg = model.test(test_loader, device=device)
         f1_score_list.append(f1)
 
-    return np.mean(np.array(f1_score_list))
+    return np.mean(np.array(f1_score_list)), np.std(np.array(f1_score_list))
 
 def main():
 
@@ -224,8 +224,8 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
-    #grid_search(train_loader, val_loader, test_loader, weights_tensor)
-    cross_validation(train_loader, val_loader, test_loader, weights_tensor)
+    grid_search(train_loader, val_loader, test_loader, weights_tensor)
+    #cross_validation(train_loader, val_loader, test_loader, weights_tensor)
 
 
 if __name__ == "__main__":
