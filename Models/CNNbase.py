@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import random, os
 import torch.nn.functional as F
 import itertools
 from torch.utils.data import TensorDataset, DataLoader, Subset
@@ -12,9 +13,8 @@ from DataAnalysis import OCTDataset
 from DataAnalysis import build_index
 from collections import Counter
 
-
 class CNNbase(nn.Module):
-    def __init__(self, learning_rate=0.01, number_of_layers=1, fc1=128, fc2=128, fc3=128, droput=0.3):
+    def __init__(self, learning_rate=0.01):
         super(CNNbase, self).__init__()
         self.learning_rate = learning_rate
         self.conv1 = nn.Conv2d(1, 32 , kernel_size=(3, 3), padding=1)
@@ -26,7 +26,7 @@ class CNNbase(nn.Module):
         self.dropout = nn.Dropout(0.25)
 
         # Compute final output shape after pooling
-        self.fc1 = nn.Linear(256 * 8 * 8, 512)
+        self.fc1 = nn.Linear(64 * 32 * 32, 512)
         self.fc2 = nn.Linear(512, 4)
 
     def forward(self, x):
@@ -37,11 +37,11 @@ class CNNbase(nn.Module):
         x = F.relu(self.conv2(x))
         x = self.pool(x)
 
-        x = F.relu(self.conv3(x))
-        x = self.pool(x)
+        #x = F.relu(self.conv3(x))
+        #x = self.pool(x)
 
-        x = F.relu(self.conv4(x))
-        x = self.pool(x)
+        #x = F.relu(self.conv4(x))
+        #x = self.pool(x)
 
         x = torch.flatten(x, start_dim=1)
         x = self.dropout(F.relu(self.fc1(x)))
@@ -84,7 +84,7 @@ class CNNbase(nn.Module):
             else:
                 patience_counter += 1
                 if patience_counter >= patience:
-                    print("⏹️ Early stopping triggered.")
+                    print("Early stopping triggered.")
                     break
 
         plt.figure()
@@ -138,8 +138,7 @@ class CNNbase(nn.Module):
         cm = cm.astype('float') / cm.sum(axis=1, keepdims=True)
         disp = ConfusionMatrixDisplay(confusion_matrix=np.round(cm, 2))
         disp.plot(cmap=plt.cm.Blues)
-        plt.title("Normalized Confusion Matrix")
-        plt.show()
+        plt.savefig("confusion_matrix.png")
         return f1
 
 
@@ -154,12 +153,12 @@ def grid_search(train_loader, val_loader, test_loader, weights_tensor):
 
     param_combinations = list(itertools.product(*parameter_grid.values()))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"🔥 Using device: {device}")
+    print(f" Using device: {device}")
 
     for params in param_combinations:
         learning_rate, num_layers, fc1, fc2, fc3 = params
         print(f"\n🧠 Testing config: LR={learning_rate}, Layers={num_layers}, FCs=({fc1}, {fc2}, {fc3})")
-        model = CNNbase(learning_rate=learning_rate, number_of_layers=num_layers, fc1=fc1, fc2=fc2, fc3=fc3).to(device)
+        model = CNNbase(learning_rate=learning_rate).to(device)
         model.train_model(train_loader, val_loader, num_epochs=20, device=device, weights_tensor=weights_tensor)
         model.test(test_loader, device=device)
 
@@ -169,7 +168,7 @@ def cross_validation(train_loader, val_loader, test_loader, weights_tensor):
     f1_score_list = []
     for fold in range(5):
         print(f"Starting validation for fold {fold+1}/5")
-        model = CNNbase(learning_rate=0.001).to(device)
+        model = CNNbase(learning_rate=0.01).to(device)
         model.train_model(train_loader, val_loader, num_epochs=20, device=device, weights_tensor=weights_tensor)
         f1, avg = model.test(test_loader, device=device)
         f1_score_list.append(f1)
@@ -177,14 +176,15 @@ def cross_validation(train_loader, val_loader, test_loader, weights_tensor):
     return np.mean(np.array(f1_score_list))
 
 def main():
+
     device = 'cuda'
     print("CUDA available:", torch.cuda.is_available())
     if torch.cuda.is_available():
         print("GPU name:", torch.cuda.get_device_name(0))
 
-    dataset_dir = "C:/Users/VLAD/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017"
+    #dataset_dir = "C:/Users/VLAD/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017"
 
-    build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
+    #build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
 
     # Load the CSV
     df = pd.read_csv("dataset_index.csv")
@@ -219,12 +219,13 @@ def main():
                               normalize="0-1")
     val_dataset = OCTDataset("dataset_index.csv", split="val", target_size=image_size)
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=0)
 
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
     grid_search(train_loader, val_loader, test_loader, weights_tensor)
+    #cross_validation(train_loader, val_loader, test_loader, weights_tensor)
 
 
 if __name__ == "__main__":

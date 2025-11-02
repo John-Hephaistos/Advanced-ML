@@ -31,7 +31,7 @@ def build_index(root_dir, output_csv, splits=["train", "val", "test"], labels=No
             dir_path = os.path.join(root_dir, split, label)
             if not os.path.exists(dir_path):
                 continue
-            for fname in os.listdir(dir_path):
+            for fname in sorted(os.listdir(dir_path)):
                 rows.append([os.path.join(dir_path, fname), split, label])
 
     with open(output_csv, "w", newline="") as f:
