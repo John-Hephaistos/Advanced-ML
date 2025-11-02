@@ -78,7 +78,7 @@ class MLP(nn.Module):
 
     def train_model(self, train_loader, val_loader, num_epochs, device="cuda", weights_tensor = None):
         device = torch.device(device if torch.cuda.is_available() else "cpu")
-        print(f"🚀 Training on: {device}")
+        print(f"Training on: {device}")
         self.to(device)
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         criterion = nn.CrossEntropyLoss(weight=weights_tensor)
@@ -110,7 +110,7 @@ class MLP(nn.Module):
             else:
                 patience_counter += 1
                 if patience_counter >= patience:
-                    print("⏹️ Early stopping triggered.")
+                    print("Early stopping triggered.")
                     break
 
         plt.figure()
@@ -158,7 +158,7 @@ class MLP(nn.Module):
                 all_targets.extend(targets.cpu().numpy())
 
         f1 = f1_score(all_targets, all_preds, average='macro')
-        print(f"✅ Test F1-score: {f1:.4f}")
+        print(f"Test F1-score: {f1:.4f}")
 
         cm = confusion_matrix(all_targets, all_preds)
         cm = cm.astype('float') / cm.sum(axis=1, keepdims=True)
@@ -172,7 +172,7 @@ class MLP(nn.Module):
 
 def grid_search(train_loader, val_loader, test_loader, weights_tensor):
     parameter_grid = {
-        'learning_rate': [0.001],
+        'learning_rate': [0.001, 0.01],
         'number_of_layers': [1, 2],
         'fc1_size': [128],
         'fc2_size': [256],
@@ -185,7 +185,7 @@ def grid_search(train_loader, val_loader, test_loader, weights_tensor):
 
     for params in param_combinations:
         learning_rate, num_layers, fc1, fc2, fc3 = params
-        print(f"\n🧠 Testing config: LR={learning_rate}, Layers={num_layers}, FCs=({fc1}, {fc2}, {fc3})")
+        print(f"Testing config: LR={learning_rate}, Layers={num_layers}, FCs=({fc1}, {fc2}, {fc3})")
         model = MLP(learning_rate=learning_rate, number_of_layers=num_layers, fc1=fc1, fc2=fc2, fc3=fc3).to(device)
         model.train_model(train_loader, val_loader, num_epochs=100, device=device, weights_tensor=weights_tensor)
         model.test(test_loader, device=device)

@@ -132,7 +132,7 @@ class CNNbase(nn.Module):
                 all_targets.extend(targets.cpu().numpy())
 
         f1 = f1_score(all_targets, all_preds, average='macro')
-        print(f"✅ Test F1-score: {f1:.4f}")
+        print(f"Test F1-score: {f1:.4f}")
 
         cm = confusion_matrix(all_targets, all_preds)
         cm = cm.astype('float') / cm.sum(axis=1, keepdims=True)
@@ -145,7 +145,7 @@ class CNNbase(nn.Module):
 def grid_search(train_loader, val_loader, test_loader, weights_tensor):
     parameter_grid = {
         'learning_rate': [0.001],
-        'number_of_layers': [1, 2],
+        'number_of_layers': [1, 2, 3],
         'fc1_size': [128],
         'fc2_size': [256],
         'fc3_size': [512],
@@ -157,7 +157,7 @@ def grid_search(train_loader, val_loader, test_loader, weights_tensor):
 
     for params in param_combinations:
         learning_rate, num_layers, fc1, fc2, fc3 = params
-        print(f"\n🧠 Testing config: LR={learning_rate}, Layers={num_layers}, FCs=({fc1}, {fc2}, {fc3})")
+        print(f"Testing config: LR={learning_rate}, Layers={num_layers}, FCs=({fc1}, {fc2}, {fc3})")
         model = CNNbase(learning_rate=learning_rate).to(device)
         model.train_model(train_loader, val_loader, num_epochs=20, device=device, weights_tensor=weights_tensor)
         model.test(test_loader, device=device)
@@ -182,9 +182,9 @@ def main():
     if torch.cuda.is_available():
         print("GPU name:", torch.cuda.get_device_name(0))
 
-    #dataset_dir = "C:/Users/VLAD/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017"
+    dataset_dir = "C:/Users/VLAD/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017"
 
-    #build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
+    build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
 
     # Load the CSV
     df = pd.read_csv("dataset_index.csv")
@@ -224,8 +224,8 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
-    grid_search(train_loader, val_loader, test_loader, weights_tensor)
-    #cross_validation(train_loader, val_loader, test_loader, weights_tensor)
+    #grid_search(train_loader, val_loader, test_loader, weights_tensor)
+    cross_validation(train_loader, val_loader, test_loader, weights_tensor)
 
 
 if __name__ == "__main__":
