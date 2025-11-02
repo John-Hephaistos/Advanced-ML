@@ -182,7 +182,10 @@ def main():
     if torch.cuda.is_available():
         print("GPU name:", torch.cuda.get_device_name(0))
 
-    dataset_dir = "C:/Users/VLAD/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017"
+    # insert the folder where you dataset is downloaded
+    # Note, this can change from device to device - it can differ from Windows 10 or 11 or Mac
+    
+    dataset_dir = ""
 
     build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
 
