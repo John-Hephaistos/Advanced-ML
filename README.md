@@ -15,5 +15,5 @@ Run the DataAnalyis.py file. This will create the lazy loader for the dataset am
 
 # Step 3 
 
-To run the models, go to the Models folder, and select one of the model files. Simply running it should suffice. Note: This will take quite a while
+To run the models, go to the Models folder, and select one of the model files. Simply running it should suffice. For the SVM go the the Notebooks folder, which is inside Models. Note: Training models will take quite a while
 
