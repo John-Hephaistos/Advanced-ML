@@ -1,8 +1,9 @@
 import os
-from PIL import Image
+import random
 import csv
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.metrics import confusion_matrix, classification_report, f1_score
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
@@ -11,7 +12,15 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import time
 import torch.utils.tensorboard as tb
+import seaborn as sns
 import matplotlib.pyplot as plt
+
+random.seed(8)
+np.random.seed(8)
+torch.manual_seed(8)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+torch.set_float32_matmul_precision("medium")
 
 
 def build_index(root_dir, output_csv, splits=["train", "val", "test"], labels=None):
@@ -49,41 +58,47 @@ class DepthWiseSeperableConv(torch.nn.Module):
         self.batchnorm_depthwise = torch.nn.BatchNorm2d(in_channels)
         self.batchnorm_pointhwise = torch.nn.BatchNorm2d(out_channels)
         self.relu = torch.nn.ReLU()
+        self.dropout = torch.nn.Dropout(0.25)
 
     def forward(self, x):
-        x = self.relu(
-            self.batchnorm_depthwise(self.depthwise(x))
-        )  # not sure when batchnorm should be applied!
-        x = self.batchnorm_pointhwise(
-            self.pointwise(x)
-        )  # why different pointiwse/depthwise order?
+        x = self.depthwise(x)
+        x = self.batchnorm_depthwise(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.pointwise(x)
+        x = self.batchnorm_pointhwise(x)
         return x
 
 
-class MobiHisNet(torch.nn.Module):  # by Kumar et al. 2021
+class MobiHisNet(torch.nn.Module):  # by Kumar et al. 2021x
     # custom architecture, input image = (1, 128, 128)
     def __init__(self, num_classes=4):
         super(MobiHisNet, self).__init__()
         self.first_conv = torch.nn.Sequential(
             torch.nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1, bias=False),
             torch.nn.BatchNorm2d(32),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.ReLU(),
         )
         self.feature_extractor = torch.nn.Sequential(
             DepthWiseSeperableConv(32, 64, stride=1),
             DepthWiseSeperableConv(64, 128, stride=2),
+            DepthWiseSeperableConv(128, 128, stride=1),
             DepthWiseSeperableConv(128, 256, stride=2),
+            DepthWiseSeperableConv(256, 256, stride=1),
             DepthWiseSeperableConv(256, 512, stride=2),
-            *[DepthWiseSeperableConv(512, 512, stride=1) for i in range(5)],
+            *[DepthWiseSeperableConv(512, 512, stride=1) for _ in range(5)],
             DepthWiseSeperableConv(512, 1024, stride=2),
+            DepthWiseSeperableConv(1024, 1024, stride=1),
         )
         self.pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = torch.nn.Sequential(
             torch.nn.Flatten(),
             torch.nn.Linear(1024, 1024),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(0.4),
             torch.nn.Linear(1024, 512),
-            torch.nn.ReLU(inplace=True),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(0.4),
             torch.nn.Linear(512, num_classes),
         )
 
@@ -99,19 +114,32 @@ class MobiHisNet(torch.nn.Module):  # by Kumar et al. 2021
 class OCTDataset(Dataset):
     def __init__(
         self,
-        csv_file,
+        csv_file=None,
+        data=None,
         split="train",
+        combined=False,
         labels=None,
         target_size=(256, 256),
         transform=None,
         normalize="0-1",
     ):
-
-        self.data = pd.read_csv(csv_file)
-        self.data = self.data[self.data["split"] == split].reset_index(drop=True)
-
+        if data is not None:
+            self.data = data
+            if combined:
+                self.data = self.data[
+                    self.data["split"].isin(["val", "test"])
+                ].reset_index(drop=True)
+            else:
+                self.data = self.data = self.data[
+                    self.data["split"] == split
+                ].reset_index(drop=True)
+        elif csv_file is not None:
+            self.data = pd.read_csv(csv_file)
+            self.data = self.data[self.data["split"] == split].reset_index(drop=True)
+        else:
+            raise ValueError("Either csv_file or data must be provided.")
         self.labels = labels or ["CNV", "DME", "DRUSEN", "NORMAL"]
-        self.label2idx = {lbl: i for i, lbl in enumerate(self.labels)}
+        self.label2idx = {label: i for i, label in enumerate(self.labels)}
         self.target_size = target_size
         self.transform = transform
         self.normalize = normalize
@@ -137,228 +165,188 @@ class OCTDataset(Dataset):
             mean, std = img.mean(), img.std() + 1e-8
             img = (img - mean) / std
 
-        img = torch.tensor(img).unsqueeze(0)
+        img = torch.tensor(img, dtype=torch.float32).unsqueeze(0)
         label = self.label2idx[row["label"]]
         return img, label
 
 
-def train_single_Epoch(
-    model, tensorboardwriter, dataloader, loss_fn, optimizer, device
-):
-    # inspired by https://docs.pytorch.org/tutorials/beginner/introyt/trainingyt.html
-    loss_running = 0.0
-    last_loss = 0.0
-
-    for i, (inputs, labels) in enumerate(dataloader):
+def train_single_epoch(model, train_loader, loss_fn, optimizer, device):
+    model.train()
+    running_loss = 0.0
+    for i, (inputs, labels) in enumerate(train_loader):
         inputs, labels = inputs.to(device), labels.to(device)
-
         optimizer.zero_grad()
-
         outputs = model(inputs)
-
         loss = loss_fn(outputs, labels)
         loss.backward()
-
         optimizer.step()
+        running_loss += loss.item()
+    epoch_loss = running_loss / len(train_loader)
+    return epoch_loss
 
-        loss_running += loss.item()
-        if i % 100 == 99:  # print every 100 mini-batches
-            last_loss = loss_running / 100  # loss per batch
-            print(f" batch {i + 1} loss: {last_loss:.3f}")
-            tensorboardwriter.add_scalar("Training Loss", last_loss, i)
-            loss_running = 0
-    return last_loss
+
+def evaluate(model, data_loader, loss_fn, device):
+    model.eval()
+    running_loss = 0.0
+    all_preds = []
+    all_labels = []
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for inputs, labels in data_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            loss = loss_fn(outputs, labels)
+            running_loss += loss.item()
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+    accuracy = 100 * correct / total
+    avg_loss = running_loss / len(data_loader)
+    f1 = f1_score(all_preds, all_labels, average="macro")
+    return avg_loss, f1, all_labels, all_preds
 
 
 def main():
     # Change this path to the location of the OCT dataset on your machine
-    dataset_dir = r"../../home1/s4327276/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017 "
-
+    dataset_dir = r"../../home1/s4327276/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017 "  # there is a space at the end of the path at times
     build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
-
-    # Hyperparameters
-    learning_rate = 0.001
-    num_epochs = 20
-    batch_size = 32
-
-    # Train set with augmentation
-    train_tfms = transforms.Compose(
-        [
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(20),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),
-            transforms.RandomResizedCrop(128, scale=(0.8, 1.0)),
-            transforms.RandomAffine(degrees=15, translate=(0.1, 0.1)),
-        ]
-    )
-
-    # Make balanced dataset by upsampling the minority classes
-
-    df = pd.read_csv("dataset_index.csv")
-
-    # Group by class, get max class
-    print(f'original splits:\n {df["split"].value_counts()}')
-    print(
-        "\n original class distribution per split:\n",
-        df.groupby("split")["label"].value_counts(),
-    )
-    max_class_count = df["label"].value_counts().max()
-    print(f"Upsampling to {max_class_count} samples per class.")
-
-    # Balance by sampling `max_class_count` samples from each class
-    upsampled_df = (
-        df.groupby("label", group_keys=False)
-        .apply(lambda x: x.sample(max_class_count, replace=True, random_state=42))
-        .reset_index(drop=True)
-    )
-
-    print("Upsampled dataset size:", len(upsampled_df))
-    print(upsampled_df["label"].value_counts())
-    # First split: train vs temp (val+test)
-    train_df, temp_df = (
-        train_test_split(  # train - 80% of the whole data, temp -20% of the whole data
-            upsampled_df,
-            test_size=0.3,
-            stratify=upsampled_df["label"],
-            random_state=1,
-        )
-    )
-
-    # Second split: val vs test (from temp)
-    val_df, test_df = train_test_split(  # 50% of the temp, so 10% each of the whole
-        temp_df,
-        test_size=0.5,
-        stratify=temp_df["label"],
-        random_state=1,
-    )
-
-    # Add split column
-    train_df["split"] = "train"
-    val_df["split"] = "val"
-    test_df["split"] = "test"
-
-    # Combine into one final DataFrame
-    final_df = pd.concat([train_df, val_df, test_df], ignore_index=True)
-    print(final_df["split"].value_counts())
-    print(final_df.groupby("split")["label"].value_counts())
-    final_df.to_csv("balanced_dataset_index.csv", index=False)
-    print("Saved balanced dataset to balanced_dataset_index.csv")
-    # Count by split
-    print("Final counts per split:\n", final_df["split"].value_counts())
-
-    # Class distribution per split
-    print(
-        "\nFinal class distribution per split:\n",
-        final_df.groupby("split")["label"].value_counts(),
-    )
-
-    train_dataset = OCTDataset(
-        "balanced_dataset_index.csv",
-        transform=train_tfms,
-        split="train",
-        target_size=(128, 128),
-        normalize="0-1",
-    )
-
-    test_dataset = OCTDataset(
-        "balanced_dataset_index.csv",
-        split="test",
-        target_size=(128, 128),
-        normalize="0-1",
-    )
-    val_dataset = OCTDataset(
-        "balanced_dataset_index.csv",
-        split="val",
-        target_size=(128, 128),
-        normalize="0-1",
-    )
-    print(
-        f"length of splits sanity check: {len(train_dataset)}, {len(val_dataset)}, {len(test_dataset)}"
-    )
-
-    train_Loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=2
-    )
-    test_Loader = DataLoader(
-        test_dataset, batch_size=batch_size, shuffle=True, num_workers=2
-    )
-    val_Loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=True, num_workers=2
-    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    model = MobiHisNet(num_classes=4)
-    model = model.to(device)
-    # calculate tensor for dataset weights. Not used as we upsampled the dataset!
-    """value_counts = train_dataset.data["label"].value_counts().sort_index()
-    label_weights = torch.tensor(
-        [
-            len(train_dataset) / (len(value_counts) * value_counts.get(label, 1))
-            for label in train_dataset.labels
-        ],
-        dtype=torch.float,
-        device=device,
-    )"""
-    # loss - cross entropy - not weighted
-    loss = (
-        torch.nn.CrossEntropyLoss()
-    )  # we upsampled the dataset, so no weights are needed
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    # Hyperparameters
+    learning_rate = 0.0001
+    num_epochs = 50
+    batch_size = 32
+    weight_decay = 0.02
+    patience = 6
 
-    # Training loop
+    df = pd.read_csv("dataset_index.csv")
+    train_df = df[df["split"] == "train"].reset_index(drop=True)
+    combined_test_df = df[df["split"].isin(["val", "test"])].reset_index(drop=True)
+
+    labels = ["CNV", "DME", "DRUSEN", "NORMAL"]
+    X = train_df["file_path"].values
+    y = train_df["label"].values
+
+    # Class weights
+    class_counts = train_df["label"].value_counts().to_dict()
+    print("Class counts:", class_counts)
+    num_samples = len(train_df)
+    num_classes = len(labels)
+    class_weights = {
+        cls: num_samples / (num_classes * count) for cls, count in class_counts.items()
+    }
+    weights_tensor = torch.tensor(
+        [class_weights[label] for label in labels], dtype=torch.float32
+    ).to(device)
+    weights_tensor.to(device)
+    print("Class weights:", class_weights)
+    image_size = (128, 128)
+    print("Training final model on full training data")
+    final_model = MobiHisNet(num_classes=len(labels)).to(device)
+    loss_fn = torch.nn.CrossEntropyLoss(weight=weights_tensor)
+    optimizer = torch.optim.Adam(
+        final_model.parameters(), lr=learning_rate, weight_decay=weight_decay
+    )
+    train_full_df, val_holdout_df = train_test_split(
+        train_df, test_size=0.1, stratify=train_df["label"], random_state=8
+    )
+    train_dataset = OCTDataset(
+        data=train_full_df, labels=labels, target_size=image_size
+    )
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=3
+    )
+    validation_dataset = OCTDataset(
+        data=val_holdout_df, labels=labels, target_size=image_size
+    )
+    validation_loader = DataLoader(
+        validation_dataset, batch_size=batch_size, shuffle=False, num_workers=3
+    )
+
+    test_dataset = OCTDataset(
+        data=combined_test_df,
+        labels=labels,
+        target_size=image_size,
+        split=None,
+        combined=True,
+    )
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=True, num_workers=3
+    )
     best_val_loss = float("inf")
-    writer = tb.SummaryWriter()
-    for epoch in range(num_epochs):
-        print(f"Epoch: {epoch+1}/{num_epochs}")
-        # set model to train mode
-        model.train()
-        avg_loss = train_single_Epoch(
-            model, writer, train_Loader, loss, optimizer, device
+    patience_counter = 0
+    train_losses = []
+    val_losses = []
+    for epoch in range(1, num_epochs + 1):
+        train_loss = train_single_epoch(
+            final_model, train_loader, loss_fn, optimizer, device
         )
-        print(f"Avg. Loss: {avg_loss:.3f}")
+        train_losses.append(train_loss)
+        val_loss, f1, _, _ = evaluate(final_model, validation_loader, loss_fn, device)
+        val_losses.append(val_loss)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            torch.save(final_model.state_dict(), "best_final_model.pth")
+            print(
+                f"Epoch {epoch}: Train Loss={train_loss:.4f}, Val Loss={val_loss:.4f}, F1={f1:.2f}(improved)"
+            )
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print("Early stopping triggered.")
+                break
+    final_model.load_state_dict(torch.load("best_final_model.pth"))
+    test_loss, f1, all_labels, all_preds = evaluate(
+        final_model, test_loader, loss_fn, device
+    )
+    cm = confusion_matrix(all_labels, all_preds, labels=list(range(len(labels))))
+    labels = ["CNV", "DME", "DRUSEN", "NORMAL"]
+    report = classification_report(
+        all_labels,
+        all_preds,
+        target_names=labels,
+        labels=list(range(len(labels))),
+        digits=4,
+    )
 
-        # Validation loop
-        # set model to eval mode
-        model.eval()
-        running_val_loss = 0.0
+    print(f"\nFinal Test Loss: {test_loss:.4f}, F1: {f1:.2f}%")
+    print("Confusion Matrix:\n", cm)
+    print("Classification Report:\n", report)
 
-        with torch.no_grad():
-            for inputs, labels in val_Loader:
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
-                val_loss = loss(outputs, labels)
-                running_val_loss += val_loss.item()
-            avg_val_loss = running_val_loss / len(val_Loader)
-        print(f"Avg. Validation Loss: {avg_val_loss:.3f}")
-        writer.add_scalar("Validation Loss", avg_val_loss, epoch)
-        # save best model
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            timestamp = time.strftime("%Y%m%d-%H%M%S")
-            model_path = f"best_model_epoch{epoch+1}_{timestamp}.pth"
-            torch.save(model.state_dict(), model_path)
-            print("Best model saved.")
-    writer.close()
-    # test
-    model.eval()
-    running_test_loss = 0.0
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for inputs, labels in test_Loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            test_loss = loss(outputs, labels)
-            running_test_loss += test_loss.item()
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-        avg_test_loss = running_test_loss / len(test_Loader)
-        accuracy = 100 * correct / total
-    print(f"Avg. Test Loss: {avg_test_loss:.3f}")
-    print(f"Test Accuracy: {accuracy:.2f}%")
+    # Plot confusion matrix
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        cm, annot=True, fmt="d", cmap="Reds", xticklabels=labels, yticklabels=labels
+    )
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
+
+    plt.title("Confusion Matrix")
+    plt.savefig("confusion_matrix.png")
+    plt.close()
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(val_losses, label="Validation Loss", color="blue")
+    plt.plot(train_losses, label="Training Loss", color="orange")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.title("Training and Validation Loss over Epochs")
+    plt.savefig("loss_curves_final_model.png")
+    plt.close()
+
+    # Save the metrics to text file
+    with open("metrics_final_model.txt", "w") as f:
+        f.write(f"Final test loss: {test_loss:.4f}\n")
+        f.write(f"Final test F1: {f1:.2f}%\n\n")
+        f.write(f"Confusion Matrix:\n{np.array2string(cm)}\n")
+        f.write(f"Classification Report:\n{report}\n")
 
 
 if __name__ == "__main__":
