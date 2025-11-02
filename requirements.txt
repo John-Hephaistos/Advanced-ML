@@ -9,3 +9,4 @@ skimage
 joblib
 tqdm
 seaborn
+kagglehub
