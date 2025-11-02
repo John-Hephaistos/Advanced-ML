@@ -211,6 +211,8 @@ def evaluate(model, data_loader, loss_fn, device):
 
 def main():
     # Change this path to the location of the OCT dataset on your machine
+    # insert the folder where you dataset is downloaded
+    # Note, this can change from device to device - it can differ from Windows 10 or 11 or Mac
     dataset_dir = r"../../home1/s4327276/.cache/kagglehub/datasets/paultimothymooney/kermany2018/versions/2/OCT2017 "  # there is a space at the end of the path at times
     build_index(root_dir=dataset_dir, output_csv="dataset_index.csv")
 
