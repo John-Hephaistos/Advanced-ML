@@ -3,7 +3,7 @@
 # Step 0
 
 Install all the packages we use. Use the command:
-"pip install requirements.txt"
+"pip install -r requirements.txt"
 
 # Step 1
 
